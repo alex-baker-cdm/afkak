@@ -35,7 +35,8 @@ from .common import (
     UnknownTopicOrPartitionError,
     UnsupportedCodecError,
 )
-from .kafkacodec import _SUPPORTED_CODECS, create_message_set
+from .kafkacodec import create_message_set
+from .common import _ALL_CODECS
 from .partitioner import RoundRobinPartitioner
 from twisted.internet.defer import CancelledError as tid_CancelledError
 from twisted.internet.defer import Deferred, DeferredList, fail, inlineCallbacks, returnValue, succeed
@@ -168,7 +169,7 @@ class Producer(object):
         # Are we compressing messages, or just sending 'raw'?
         if codec is None:
             codec = CODEC_NONE
-        elif codec not in _SUPPORTED_CODECS:
+        elif codec not in _ALL_CODECS:
             if not isinstance(codec, Integral):
                 raise TypeError("Codec: %r unsupported" % codec)
             raise UnsupportedCodecError("Codec 0x%02x unsupported" % codec)
