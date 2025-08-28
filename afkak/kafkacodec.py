@@ -65,6 +65,7 @@ from .common import (
     ProtocolError,
     TopicMetadata,
     UnsupportedCodecError,
+    _ALL_CODECS,
     _HeartbeatRequest,
     _HeartbeatResponse,
     _JoinGroupProtocolMetadata,
@@ -84,7 +85,6 @@ from twisted.python.compat import nativeString
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
-_SUPPORTED_CODECS = (CODEC_GZIP, CODEC_NONE, CODEC_SNAPPY)
 ATTRIBUTE_CODEC_MASK = 0x03
 MAX_BROKERS = 1024
 
