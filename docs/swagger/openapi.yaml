@@ -1,0 +1,1199 @@
+openapi: 3.0.3
+info:
+  title: Afkak - Twisted Python Kafka Client API
+  description: |
+    Afkak is a Twisted-native Apache Kafka client library. It provides support for:
+    
+    - **Producing messages** with automatic batching and optional compression
+    - **Consuming messages** with group coordination and automatic commit
+    
+    This OpenAPI specification documents the public Python API of the afkak library.
+    While afkak is not a REST API service, this documentation describes the library's
+    classes, methods, and data structures in OpenAPI format for standardized reference.
+    
+    ## Quick Start
+    
+    ```python
+    from afkak.client import KafkaClient
+    from afkak.consumer import Consumer
+    from afkak.producer import Producer
+    
+    # Create a client
+    client = KafkaClient("localhost:9092")
+    
+    # Create a producer and send messages
+    producer = Producer(client)
+    d = producer.send_messages("my-topic", msgs=[b"Hello, Kafka!"])
+    
+    # Create a consumer
+    def process(consumer, messages):
+        for msg in messages:
+            print(msg.message.value)
+    
+    consumer = Consumer(client, "my-topic", 0, process)
+    consumer.start(OFFSET_EARLIEST)
+    ```
+    
+    ## Supported Kafka Versions
+    
+    - Kafka 0.9.0.1 and later
+    - Kafka 1.1.x (integration tested)
+    
+    ## Supported Python Versions
+    
+    - CPython 3.7, 3.8, 3.9
+    - PyPy3
+    
+  version: 21.5.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  contact:
+    name: Afkak Project
+    url: https://github.com/ciena/afkak
+
+externalDocs:
+  description: Full Documentation
+  url: https://afkak.readthedocs.io/en/latest/
+
+servers:
+  - url: kafka://localhost:9092
+    description: Default Kafka broker connection
+
+tags:
+  - name: KafkaClient
+    description: |
+      Cluster-aware Kafka client that maintains a cache of cluster metadata
+      and routes requests to appropriate broker connections.
+  - name: Producer
+    description: |
+      Write messages to Kafka with automatic retries and batching support.
+  - name: Consumer
+    description: |
+      Simple Kafka consumer for consuming messages from a single partition.
+  - name: ConsumerGroup
+    description: |
+      Coordinated consumer group with automatic partition assignment.
+  - name: Partitioners
+    description: |
+      Partitioner classes for determining message partition assignment.
+  - name: MessageConstruction
+    description: |
+      Functions for constructing message payloads.
+  - name: DataStructures
+    description: |
+      Request and response data structures used by the library.
+  - name: Constants
+    description: |
+      Constants used throughout the library.
+
+paths:
+  /client:
+    post:
+      tags:
+        - KafkaClient
+      summary: Create KafkaClient instance
+      description: |
+        Creates a new KafkaClient instance for connecting to a Kafka cluster.
+        
+        ```python
+        from afkak.client import KafkaClient
+        
+        client = KafkaClient(
+            hosts="localhost:9092",
+            clientId="my-client",
+            timeout=10000
+        )
+        ```
+      operationId: createKafkaClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KafkaClientConfig'
+      responses:
+        '200':
+          description: KafkaClient instance created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KafkaClient'
+
+  /client/close:
+    post:
+      tags:
+        - KafkaClient
+      summary: Close KafkaClient
+      description: |
+        Permanently dispose of the client. Terminates open connections and releases resources.
+        
+        ```python
+        d = client.close()
+        yield d  # Wait for cleanup to complete
+        ```
+      operationId: closeKafkaClient
+      responses:
+        '200':
+          description: Client closed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: closed
+
+  /client/metadata:
+    get:
+      tags:
+        - KafkaClient
+      summary: Load metadata for topics
+      description: |
+        Discover topic metadata and brokers. Afkak internally calls this method
+        whenever metadata is required.
+        
+        ```python
+        d = client.load_metadata_for_topics("topic1", "topic2")
+        ```
+      operationId: loadMetadataForTopics
+      parameters:
+        - name: topics
+          in: query
+          description: Topic names to load metadata for
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Metadata loaded successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopicMetadata'
+
+  /client/update-hosts:
+    post:
+      tags:
+        - KafkaClient
+      summary: Update cluster hosts
+      description: |
+        Advise the client of possible changes to Kafka cluster hosts.
+        Useful in Docker environments where broker IPs may change.
+        
+        ```python
+        client.update_cluster_hosts("broker1:9092,broker2:9092")
+        ```
+      operationId: updateClusterHosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hosts:
+                  type: string
+                  description: Comma-separated host:port pairs or list of strings
+                  example: "broker1:9092,broker2:9092"
+      responses:
+        '200':
+          description: Hosts updated successfully
+
+  /client/reset-metadata:
+    post:
+      tags:
+        - KafkaClient
+      summary: Reset topic metadata
+      description: |
+        Remove cached metadata for named topics. Metadata will be fetched again as required.
+        
+        ```python
+        client.reset_topic_metadata("topic1", "topic2")
+        ```
+      operationId: resetTopicMetadata
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                topics:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Metadata reset successfully
+
+  /producer:
+    post:
+      tags:
+        - Producer
+      summary: Create Producer instance
+      description: |
+        Creates a new Producer instance for sending messages to Kafka.
+        
+        ```python
+        from afkak.producer import Producer
+        
+        producer = Producer(
+            client,
+            batch_send=True,
+            batch_every_n=20,
+            batch_every_t=60
+        )
+        ```
+      operationId: createProducer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProducerConfig'
+      responses:
+        '200':
+          description: Producer instance created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producer'
+
+  /producer/send:
+    post:
+      tags:
+        - Producer
+      summary: Send messages to Kafka
+      description: |
+        Send messages to a Kafka topic. Messages are sent immediately or batched
+        depending on Producer configuration.
+        
+        ```python
+        d = producer.send_messages(
+            "my-topic",
+            key=b"partition-key",
+            msgs=[b"message1", b"message2"]
+        )
+        d.addCallback(handle_response)
+        ```
+      operationId: sendMessages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - topic
+                - msgs
+              properties:
+                topic:
+                  type: string
+                  description: Kafka topic to send messages to
+                  example: my-topic
+                key:
+                  type: string
+                  format: byte
+                  nullable: true
+                  description: |
+                    Message key for partitioning. Either bytes or None.
+                    Required for HashedPartitioner.
+                msgs:
+                  type: array
+                  items:
+                    type: string
+                    format: byte
+                    nullable: true
+                  description: |
+                    Non-empty sequence of message bytestrings. None indicates
+                    a tombstone on compacted topics.
+      responses:
+        '200':
+          description: Messages sent successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProduceResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /producer/stop:
+    post:
+      tags:
+        - Producer
+      summary: Stop the Producer
+      description: |
+        Terminate any outstanding requests and stop the producer.
+        
+        ```python
+        d = producer.stop()
+        yield d
+        ```
+      operationId: stopProducer
+      responses:
+        '200':
+          description: Producer stopped successfully
+
+  /consumer:
+    post:
+      tags:
+        - Consumer
+      summary: Create Consumer instance
+      description: |
+        Creates a new Consumer instance for consuming messages from a single partition.
+        
+        ```python
+        from afkak.consumer import Consumer
+        
+        def processor(consumer, messages):
+            for msg in messages:
+                print(msg.message.value)
+            consumer.commit()
+        
+        consumer = Consumer(
+            client,
+            topic="my-topic",
+            partition=0,
+            processor=processor,
+            consumer_group="my-group"
+        )
+        ```
+      operationId: createConsumer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsumerConfig'
+      responses:
+        '200':
+          description: Consumer instance created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consumer'
+
+  /consumer/start:
+    post:
+      tags:
+        - Consumer
+      summary: Start consuming messages
+      description: |
+        Start fetching messages from Kafka and delivering them to the processor function.
+        
+        ```python
+        from afkak.common import OFFSET_EARLIEST
+        
+        d = consumer.start(OFFSET_EARLIEST)
+        # Deferred fires when consumer stops or encounters unrecoverable error
+        ```
+      operationId: startConsumer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - start_offset
+              properties:
+                start_offset:
+                  oneOf:
+                    - type: integer
+                    - type: string
+                      enum: [OFFSET_EARLIEST, OFFSET_LATEST, OFFSET_COMMITTED]
+                  description: |
+                    Offset to start consuming from. Special values:
+                    - OFFSET_EARLIEST (-2): Start from oldest message
+                    - OFFSET_LATEST (-1): Start from newest message
+                    - OFFSET_COMMITTED (-101): Start from last committed offset
+      responses:
+        '200':
+          description: Consumer started successfully
+        '409':
+          description: Consumer already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestartError'
+
+  /consumer/stop:
+    post:
+      tags:
+        - Consumer
+      summary: Stop the Consumer
+      description: |
+        Stop the consumer and return offset of last processed message.
+        Cancels all outstanding operations.
+        
+        ```python
+        consumer.stop()
+        ```
+      operationId: stopConsumer
+      responses:
+        '200':
+          description: Consumer stopped successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_processed_offset:
+                    type: integer
+                    nullable: true
+        '409':
+          description: Consumer not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestopError'
+
+  /consumer/shutdown:
+    post:
+      tags:
+        - Consumer
+      summary: Gracefully shutdown the Consumer
+      description: |
+        Gracefully shutdown the consumer. Completes outstanding processing,
+        commits current offsets (if configured), and stops.
+        
+        ```python
+        d = consumer.shutdown()
+        last_offset = yield d
+        ```
+      operationId: shutdownConsumer
+      responses:
+        '200':
+          description: Consumer shutdown successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_processed_offset:
+                    type: integer
+                    nullable: true
+
+  /consumer/commit:
+    post:
+      tags:
+        - Consumer
+      summary: Commit current offset
+      description: |
+        Commit the current offset to Kafka. Requires consumer_group to be set.
+        
+        ```python
+        d = consumer.commit()
+        ```
+      operationId: commitOffset
+      responses:
+        '200':
+          description: Offset committed successfully
+
+  /consumer-group:
+    post:
+      tags:
+        - ConsumerGroup
+      summary: Create ConsumerGroup instance
+      description: |
+        Creates a coordinated consumer group with automatic partition assignment.
+        
+        ```python
+        from afkak import ConsumerGroup
+        
+        def processor(consumer, messages):
+            for msg in messages:
+                print(msg.message.value)
+        
+        group = ConsumerGroup(
+            client,
+            group_id="my-group",
+            topics=["topic1", "topic2"],
+            processor=processor
+        )
+        ```
+      operationId: createConsumerGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsumerGroupConfig'
+      responses:
+        '200':
+          description: ConsumerGroup instance created successfully
+
+  /consumer-group/stop:
+    post:
+      tags:
+        - ConsumerGroup
+      summary: Stop the ConsumerGroup
+      description: |
+        Stop the consumer group and all associated consumers.
+        
+        ```python
+        d = group.stop()
+        yield d
+        ```
+      operationId: stopConsumerGroup
+      responses:
+        '200':
+          description: ConsumerGroup stopped successfully
+
+components:
+  schemas:
+    KafkaClientConfig:
+      type: object
+      required:
+        - hosts
+      properties:
+        hosts:
+          type: string
+          description: |
+            Kafka broker hosts. Either a comma-separated string "host:port,host:port"
+            or a list of strings ["host:port", ...]. Default port is 9092.
+          example: "localhost:9092"
+        clientId:
+          type: string
+          description: Short string to identify the client to the server
+          default: afkak-client
+          example: my-application
+        timeout:
+          type: number
+          description: Client-side request timeout in milliseconds
+          default: 10000
+          example: 10000
+        disconnect_on_timeout:
+          type: boolean
+          description: Whether to disconnect broker clients when requests timeout
+          default: false
+        correlation_id:
+          type: integer
+          description: Starting correlation ID for requests
+          default: 0
+        enable_protocol_version_discovery:
+          type: boolean
+          description: |
+            If true, client attempts to detect Kafka protocol version.
+            Should be false for Kafka < 0.10.0.
+          default: true
+
+    KafkaClient:
+      type: object
+      properties:
+        clientId:
+          type: string
+          description: Client identifier
+        timeout:
+          type: number
+          description: Request timeout in seconds
+        _brokers:
+          type: object
+          description: Map of broker ID to broker metadata
+          additionalProperties:
+            $ref: '#/components/schemas/BrokerMetadata'
+
+    ProducerConfig:
+      type: object
+      required:
+        - client
+      properties:
+        client:
+          type: string
+          description: Reference to KafkaClient instance
+        partitioner_class:
+          type: string
+          description: Partitioner class name
+          default: RoundRobinPartitioner
+          enum:
+            - RoundRobinPartitioner
+            - HashedPartitioner
+        req_acks:
+          type: integer
+          description: |
+            Acknowledgement level required from server:
+            - 0: No ack required (PRODUCER_ACK_NOT_REQUIRED)
+            - 1: Local write ack (PRODUCER_ACK_LOCAL_WRITE)
+            - -1: All replicas ack (PRODUCER_ACK_ALL_REPLICAS)
+          default: 1
+          enum: [0, 1, -1]
+        ack_timeout:
+          type: number
+          description: Server-side ack timeout in milliseconds
+          default: 1000
+        max_req_attempts:
+          type: integer
+          description: Maximum request retry attempts before failing
+          default: 10
+        retry_interval:
+          type: number
+          description: Initial retry interval in seconds
+          default: 0.25
+        codec:
+          type: string
+          description: Compression codec
+          default: CODEC_NONE
+          enum:
+            - CODEC_NONE
+            - CODEC_GZIP
+            - CODEC_SNAPPY
+        batch_send:
+          type: boolean
+          description: Enable message batching
+          default: false
+        batch_every_n:
+          type: integer
+          description: Send batch after this many messages
+          default: 10
+        batch_every_b:
+          type: integer
+          description: Send batch after this many bytes
+          default: 32768
+        batch_every_t:
+          type: number
+          description: Send batch after this many seconds
+          default: 30
+
+    Producer:
+      type: object
+      properties:
+        partitioner_class:
+          type: string
+        req_acks:
+          type: integer
+        ack_timeout:
+          type: number
+        codec:
+          type: integer
+
+    ConsumerConfig:
+      type: object
+      required:
+        - client
+        - topic
+        - partition
+        - processor
+      properties:
+        client:
+          type: string
+          description: Reference to KafkaClient instance
+        topic:
+          type: string
+          description: Topic to consume from
+          example: my-topic
+        partition:
+          type: integer
+          description: Partition number to consume from
+          example: 0
+        processor:
+          type: string
+          description: |
+            Callback function reference. Function signature:
+            processor(consumer, messages) -> Optional[Deferred]
+        consumer_group:
+          type: string
+          nullable: true
+          description: Consumer group ID for offset commits
+          example: my-consumer-group
+        commit_metadata:
+          type: string
+          format: byte
+          nullable: true
+          description: Optional metadata to store with offset commits
+        auto_commit_every_n:
+          type: integer
+          description: Auto-commit after this many messages (0 to disable)
+          default: 100
+        auto_commit_every_ms:
+          type: integer
+          description: Auto-commit interval in milliseconds (0 to disable)
+          default: 5000
+        fetch_size_bytes:
+          type: integer
+          description: Minimum bytes to request in fetch
+          default: 65536
+        fetch_max_wait_time:
+          type: integer
+          description: Maximum wait time for fetch in milliseconds
+          default: 100
+        buffer_size:
+          type: integer
+          description: Initial fetch buffer size
+          default: 131072
+        max_buffer_size:
+          type: integer
+          nullable: true
+          description: Maximum fetch buffer size (null for no limit)
+        request_retry_init_delay:
+          type: number
+          description: Initial retry delay in seconds
+          default: 0.1
+        request_retry_max_delay:
+          type: number
+          description: Maximum retry delay in seconds
+          default: 30.0
+        request_retry_max_attempts:
+          type: integer
+          description: Maximum retry attempts (0 for unlimited)
+          default: 0
+        auto_offset_reset:
+          type: string
+          nullable: true
+          description: |
+            Action on OffsetOutOfRangeError:
+            - OFFSET_EARLIEST: Request oldest messages
+            - OFFSET_LATEST: Request newest messages
+            - null: Fail with error
+          enum:
+            - OFFSET_EARLIEST
+            - OFFSET_LATEST
+            - null
+
+    Consumer:
+      type: object
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        consumer_group:
+          type: string
+          nullable: true
+        last_processed_offset:
+          type: integer
+          nullable: true
+          description: Offset of last successfully processed message
+        last_committed_offset:
+          type: integer
+          nullable: true
+          description: Last offset committed to Kafka
+
+    ConsumerGroupConfig:
+      type: object
+      required:
+        - client
+        - group_id
+        - topics
+        - processor
+      properties:
+        client:
+          type: string
+          description: Reference to KafkaClient instance
+        group_id:
+          type: string
+          description: Consumer group identifier
+          example: my-consumer-group
+        topics:
+          type: array
+          items:
+            type: string
+          description: Topics to consume from
+          example: ["topic1", "topic2"]
+        processor:
+          type: string
+          description: Callback function reference
+        session_timeout_ms:
+          type: integer
+          description: Session timeout in milliseconds
+          default: 30000
+        heartbeat_interval_ms:
+          type: integer
+          description: Heartbeat interval in milliseconds
+          default: 5000
+
+    ProduceRequest:
+      type: object
+      description: Request to produce messages to a topic partition
+      properties:
+        topic:
+          type: string
+          description: Topic name
+        partition:
+          type: integer
+          description: Partition number
+        messages:
+          type: array
+          items:
+            type: string
+            format: byte
+          description: Messages to produce
+
+    ProduceResponse:
+      type: object
+      description: Response from a produce request
+      properties:
+        topic:
+          type: string
+          description: Topic name
+        partition:
+          type: integer
+          description: Partition number
+        error:
+          type: integer
+          description: Error code (0 for success)
+        offset:
+          type: integer
+          description: Offset of first message in the request
+
+    FetchRequest:
+      type: object
+      description: Request to fetch messages from a topic partition
+      properties:
+        topic:
+          type: string
+          description: Topic name
+        partition:
+          type: integer
+          description: Partition number
+        offset:
+          type: integer
+          description: Offset to start fetching from
+        max_bytes:
+          type: integer
+          description: Maximum bytes to return
+
+    FetchResponse:
+      type: object
+      description: Response from a fetch request
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        error:
+          type: integer
+        highwaterMark:
+          type: integer
+          description: Offset of last message in partition
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    OffsetRequest:
+      type: object
+      description: Request to fetch offsets for a partition
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        time:
+          type: integer
+          description: |
+            Timestamp to fetch offset for:
+            - -1: Latest offset
+            - -2: Earliest offset
+          default: -1
+        max_offsets:
+          type: integer
+          description: Maximum offsets to return
+          default: 1
+
+    OffsetResponse:
+      type: object
+      description: Response from an offset request
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        error:
+          type: integer
+        offsets:
+          type: array
+          items:
+            type: integer
+
+    OffsetCommitRequest:
+      type: object
+      description: Request to commit an offset
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        offset:
+          type: integer
+          description: Offset to commit
+        timestamp:
+          type: integer
+          nullable: true
+        metadata:
+          type: string
+          format: byte
+          nullable: true
+
+    OffsetCommitResponse:
+      type: object
+      description: Response from an offset commit request
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        error:
+          type: integer
+
+    OffsetFetchRequest:
+      type: object
+      description: Request to fetch committed offset
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+
+    OffsetFetchResponse:
+      type: object
+      description: Response from an offset fetch request
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        offset:
+          type: integer
+        metadata:
+          type: string
+          format: byte
+        error:
+          type: integer
+
+    Message:
+      type: object
+      description: A Kafka message
+      properties:
+        magic:
+          type: integer
+          description: Message format version (0 or 1)
+        attributes:
+          type: integer
+          description: Message attributes (compression codec)
+        key:
+          type: string
+          format: byte
+          nullable: true
+          description: Message key
+        value:
+          type: string
+          format: byte
+          nullable: true
+          description: Message value/payload
+        timestamp:
+          type: integer
+          nullable: true
+          description: Message timestamp (magic=1 only)
+
+    SourcedMessage:
+      type: object
+      description: A message with source information
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        offset:
+          type: integer
+        message:
+          $ref: '#/components/schemas/Message'
+
+    BrokerMetadata:
+      type: object
+      description: Metadata for a Kafka broker
+      properties:
+        node_id:
+          type: integer
+          description: Broker node ID
+        host:
+          type: string
+          description: Broker hostname
+        port:
+          type: integer
+          description: Broker port
+
+    TopicMetadata:
+      type: object
+      description: Metadata for a Kafka topic
+      properties:
+        topic:
+          type: string
+          description: Topic name
+        topic_error_code:
+          type: integer
+          description: Error code for topic
+        partition_metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartitionMetadata'
+
+    PartitionMetadata:
+      type: object
+      description: Metadata for a topic partition
+      properties:
+        topic:
+          type: string
+        partition:
+          type: integer
+        partition_error_code:
+          type: integer
+        leader:
+          type: integer
+          description: Node ID of partition leader
+        replicas:
+          type: array
+          items:
+            type: integer
+          description: Node IDs of replicas
+        isr:
+          type: array
+          items:
+            type: integer
+          description: Node IDs of in-sync replicas
+
+    RoundRobinPartitioner:
+      type: object
+      description: |
+        Partitioner that distributes messages across partitions in round-robin fashion.
+        
+        ```python
+        from afkak.partitioner import RoundRobinPartitioner
+        
+        producer = Producer(client, partitioner_class=RoundRobinPartitioner)
+        ```
+      properties:
+        topic:
+          type: string
+        partitions:
+          type: array
+          items:
+            type: integer
+        randomStart:
+          type: boolean
+          description: Start at random position in partition cycle
+          default: false
+
+    HashedPartitioner:
+      type: object
+      description: |
+        Partitioner that selects partition based on hash of message key.
+        Uses MurmurHash2 algorithm compatible with Java Kafka client.
+        
+        ```python
+        from afkak.partitioner import HashedPartitioner
+        
+        producer = Producer(client, partitioner_class=HashedPartitioner)
+        producer.send_messages("topic", key=b"my-key", msgs=[b"message"])
+        ```
+      properties:
+        topic:
+          type: string
+        partitions:
+          type: array
+          items:
+            type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+        message:
+          type: string
+          description: Error message
+
+    RestartError:
+      type: object
+      description: Error when starting an already-running component
+      properties:
+        error:
+          type: string
+          example: RestartError
+        message:
+          type: string
+          example: Start called on already-started consumer
+
+    RestopError:
+      type: object
+      description: Error when stopping a non-running component
+      properties:
+        error:
+          type: string
+          example: RestopError
+        message:
+          type: string
+          example: Stop called on non-running consumer
+
+    # Constants documentation
+    OffsetConstants:
+      type: object
+      description: |
+        Special offset values for Consumer.start():
+        
+        - **OFFSET_EARLIEST** (-2): Start from the oldest available message
+        - **OFFSET_LATEST** (-1): Start from the newest message
+        - **OFFSET_COMMITTED** (-101): Start from last committed offset (requires consumer_group)
+      properties:
+        OFFSET_EARLIEST:
+          type: integer
+          example: -2
+        OFFSET_LATEST:
+          type: integer
+          example: -1
+        OFFSET_COMMITTED:
+          type: integer
+          example: -101
+
+    CompressionCodecs:
+      type: object
+      description: |
+        Compression codecs for Producer:
+        
+        - **CODEC_NONE** (0x00): No compression
+        - **CODEC_GZIP** (0x01): Gzip compression
+        - **CODEC_SNAPPY** (0x02): Snappy compression (requires afkak[snappy])
+        - **CODEC_LZ4** (0x03): LZ4 compression (not currently supported)
+      properties:
+        CODEC_NONE:
+          type: integer
+          example: 0
+        CODEC_GZIP:
+          type: integer
+          example: 1
+        CODEC_SNAPPY:
+          type: integer
+          example: 2
+        CODEC_LZ4:
+          type: integer
+          example: 3
+
+    ProducerAckLevels:
+      type: object
+      description: |
+        Producer acknowledgement levels:
+        
+        - **PRODUCER_ACK_NOT_REQUIRED** (0): No acknowledgement required
+        - **PRODUCER_ACK_LOCAL_WRITE** (1): Wait for local write (default)
+        - **PRODUCER_ACK_ALL_REPLICAS** (-1): Wait for all replicas
+      properties:
+        PRODUCER_ACK_NOT_REQUIRED:
+          type: integer
+          example: 0
+        PRODUCER_ACK_LOCAL_WRITE:
+          type: integer
+          example: 1
+        PRODUCER_ACK_ALL_REPLICAS:
+          type: integer
+          example: -1
