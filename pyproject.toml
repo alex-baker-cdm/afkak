@@ -85,4 +85,5 @@ show-fixes = true
 
 ignore = [
     'B028', # ignore stacklevel warnings
+    'B905', # ignore zip() strict= (pre-existing, surfaced by target-version bump)
 ]
