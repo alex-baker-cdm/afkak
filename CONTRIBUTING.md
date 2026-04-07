@@ -5,7 +5,7 @@ This document describes the associated standards.
 
 ## Code Standards
 
-* Please lint your code via `tox -e py38-lint` before submission.
+* Please lint your code via `tox -e py312-lint` before submission.
   * This checks for compliance with PEP 8 and limits line length to 120 characters.
 * Please also format your code via `make fmt` before you commit changes.
   * this will format any changes to the pre-configured `black` and `isort` definitions.

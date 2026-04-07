@@ -25,7 +25,7 @@ Please report any issues [on GitHub](https://github.com/ciena/afkak/issues).
 
 Afkak supports these Pythons:
 
-- CPython 3.7, 3.8, and 3.9
+- CPython 3.10, 3.11, and 3.12
 - PyPy3
 
 We aim to support Kafka 1.1.<var>x</var> and later.
@@ -229,7 +229,7 @@ Alternatively, you might want to run unit tests in a list of specific
 Python versions:
 
 ```shell
-.env/bin/tox -e py35-unit-snappy,py38-unit-snappy
+.env/bin/tox -e py310-unit-snappy,py312-unit-snappy
 ```
 
 Please run the tests on the minimum and maximum supported Python versions

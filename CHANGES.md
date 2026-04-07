@@ -1,6 +1,8 @@
 Version 21.5.0
 ==============
 
+- **Feature:** Update to Python 3.12 LTS. Supported versions are now CPython 3.10, 3.11, and 3.12. Python 3.7, 3.8, and 3.9 are no longer supported as they have reached end-of-life.
+
 - **Feature:** Test with Python 3.9.
 
 - **Removal:** Drop support for Python 2.7 and PyPy2, which are no longer supported by Twisted 21.2.0.

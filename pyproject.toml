@@ -10,7 +10,7 @@ authors = [
     {name = "Tom Most"},
     {name = "Mark Vaught"}
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 
 readme = "README.md"
 description = "Twisted Python client for Apache Kafka"
@@ -23,10 +23,9 @@ classifiers=[
     'Operating System :: MacOS :: MacOS X',
     'Operating System :: POSIX',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.7',
-    'Programming Language :: Python :: 3.8',
-    'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
     'Programming Language :: Python :: Implementation :: CPython',
     'Programming Language :: Python :: Implementation :: PyPy',
     'Topic :: Communications',
@@ -68,7 +67,7 @@ skip-string-normalization=true
 
 [tool.ruff]
 fixable = []
-target-version = "py39"
+target-version = "py310"
 select = [
     'E', # pycodestyle errors
     'F', # pyflakes
@@ -86,4 +85,5 @@ show-fixes = true
 
 ignore = [
     'B028', # ignore stacklevel warnings
+    'B905', # ignore zip() strict= (pre-existing, surfaced by target-version bump)
 ]
