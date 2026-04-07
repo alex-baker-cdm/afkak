@@ -77,7 +77,7 @@ jobs:
     - name: Cache Intersphinx inventories
       # Cache intersphinx inventories to make the build more robust in
       # the face of upstreams going down.
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: docs/_cache
         key: intersphinx-${{ hashFiles('docs/conf.py') }}

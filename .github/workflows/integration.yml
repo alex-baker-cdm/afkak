@@ -20,7 +20,7 @@ jobs:
         kafka-version: ["0.9.0.1", "1.1.1", "2.8.2"]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Install build dependencies
       run: |
@@ -28,7 +28,7 @@ jobs:
 
     - name: Cache Kafka tarballs
       # Cache Kafka server tarballs to be nice to the Apache servers.
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: servers/dist
         key: kafka-${{ matrix.kafka-version }}
@@ -37,7 +37,7 @@ jobs:
           kafka-
 
     - name: "Set up Python ${{ matrix.python-version }}"
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: "${{ matrix.python-version }}"
 
