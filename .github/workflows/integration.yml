@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.12"]
         kafka-version: ["0.9.0.1", "1.1.1", "2.8.2"]
 
     steps:
