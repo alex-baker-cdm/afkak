@@ -67,7 +67,7 @@ skip-string-normalization=true
 
 [tool.ruff]
 fixable = []
-target-version = "py312"
+target-version = "py310"
 select = [
     'E', # pycodestyle errors
     'F', # pyflakes
